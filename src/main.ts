@@ -71,7 +71,7 @@ function checkCollisions(
         const dx0 = bodies[i].x - bodies[0].x;
         const dy0 = bodies[i].y - bodies[0].y;
         const dist0 = Math.sqrt(dx0*dx0 + dy0*dy0);
-        if (dist0 <= bodies[0].radius + bodies[i].radius) {
+        if (dist0 <= bodies[0].radius * 1.15 + bodies[i].radius) {
             bodies[i].alive = 0;
             changed.add(i);
             continue;
@@ -313,7 +313,7 @@ async function main()
 
         frameCount++;
 
-        if (frameCount % 10 === 0) {
+        if (frameCount % 5 === 0) {
             
             // read current body data from GPU back to CPU
             const readBuffer = device.createBuffer({
