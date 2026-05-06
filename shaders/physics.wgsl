@@ -19,8 +19,8 @@ struct SimParams
     centralMass: f32,   // central mass (anchor point)
 }
 
-@group(0) @binding(0) var<storage, read> bodiesIn: array<Body>;         // bodies initially in the sim
-@group(0) @binding(1) var<storage, read_write> bodiesOut: array<Body>;  // bodies exiting the sim (some will die)
+@group(0) @binding(0) var<storage, read> bodiesIn: array<Body>;         // bodies initially in the sim (buff A)
+@group(0) @binding(1) var<storage, read_write> bodiesOut: array<Body>;  // bodies exiting the sim (buffer B)
 @group(0) @binding(2) var<uniform> params: SimParams;                   // simulation information
 
 // compute shader to handle physics calculations between bodies. each thread handles a body

@@ -253,3 +253,15 @@ export function renderPass(
 
     device.queue.submit([commandEncoder.finish()]);
 }
+
+
+/* 
+
+Frame N:
+[bufferA] → COMPUTE → [bufferB] → RENDER → screen
+                          ↕ swap
+Frame N+1:
+[bufferB] → COMPUTE → [bufferA] → RENDER → screen
+
+
+*/
