@@ -161,7 +161,7 @@ export function createGPUBuffer(
     device: GPUDevice,
     bodies: CelestialBody[]
 ): GPUBuffer {
-    
+
     // fill the array of instances of bodies from the function above,
     // then make the GPU buffer. Storage, COPY DST and COPY SRC because
     // we need the buffer to be copied into on the CPU side and we need
@@ -244,8 +244,8 @@ export function renderPass(
         }]
     })
 
-    // call render pass functions and complete the command encoder command
-    // sequence 
+    // update pipeline, bindgroup, and num bodies and complete the 
+    // command encoder command sequence 
     renderPass.setPipeline(pipeline);
     renderPass.setBindGroup(0, bindGroup);
     renderPass.draw(6, bodyCount);

@@ -163,13 +163,14 @@ async function main()
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
+    // packing sim info into 16 byte buffer for physics.wgsl
     const paramsData = new ArrayBuffer(16);
     new Float32Array(paramsData, 0, 2).set([6.674e-3, state.dt]);
     new Uint32Array(paramsData, 8, 1).set([state.bodies.length]);
     new Float32Array(paramsData, 12, 1).set([1e10]);
     device.queue.writeBuffer(paramsBuffer, 0, paramsData);
 
-        // for zooming out 
+    // for zooming out 
     const zoomBuffer = device.createBuffer({
         size: 4, // single f32
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
@@ -241,19 +242,20 @@ async function main()
             color: [1, 0.3, 0.3, 1]  // red
         });
         
-        // recreate buffers to fit new body
+        // recreate buffers to fit new body thats inserted
         bufferA = createGPUBuffer(device, state.bodies);
         bufferB = createGPUBuffer(device, state.bodies);
         computeBindGroup = makeComputeBindGroup(device, computeBGL, bufferA, bufferB, paramsBuffer);
         renderBindGroup = makeBindGroup(device, renderBGL, bufferB, zoomBuffer);
         
-        // update params with new body count
+        // update params with new body count (basically plus one on the state bodies length)
         const newParamsData = new ArrayBuffer(16);
         new Float32Array(newParamsData, 0, 2).set([6.674e-3, state.dt]);
         new Uint32Array(newParamsData, 8, 1).set([state.bodies.length]);
         new Float32Array(newParamsData, 12, 1).set([1e10]);
         device.queue.writeBuffer(paramsBuffer, 0, newParamsData);
         
+        // reset the button
         insertMode = false;
         insertBtn.textContent = 'Insert Mass Mode';
         insertBtn.style.background = '#ffcc00';
@@ -264,6 +266,7 @@ async function main()
     const speedVal = document.getElementById('speedVal')!;
     speedSlider.addEventListener('input', () => speedVal.textContent = speedSlider.value);
 
+    // zoom in buffer creation since we are adjusting the clip space and positions on the wgsl side
     zoomSlider.addEventListener('input', () => {
         zoomVal.textContent = zoomSlider.value,
         device.queue.writeBuffer(zoomBuffer, 0, new Float32Array([parseFloat(zoomSlider.value)]))
@@ -296,7 +299,8 @@ async function main()
     {
         const speed = parseInt(speedSlider.value);
 
-        // compute pass
+        // compute pass, in a loop when speed > 1 it runs multipel time steps
+        // per second, which speeds up the simulation. we just call the compute pass
         for (let s = 0; s < speed; s++) {
 
             // setup cmd encoder and begin compute pass batch
