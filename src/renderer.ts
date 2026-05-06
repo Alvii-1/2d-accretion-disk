@@ -57,7 +57,7 @@ export function createRenderPipeline(
         }, {
             binding: 1,
             visibility: GPUShaderStage.VERTEX,
-            buffer: { type: 'uniform'}
+            buffer: { type: 'uniform' }
         }]
     })
 
@@ -139,15 +139,15 @@ export function bodiesToFloat32Array(
     const data = new Float32Array(bodies.length * 12);
     for (let i = 0; i < bodies.length; i++) {
         const body = bodies[i];
-        data[i * 12 + 0] = body.x;
-        data[i * 12 + 1] = body.y;
-        data[i * 12 + 2] = body.vx;
-        data[i * 12 + 3] = body.vy;
-        data[i * 12 + 4] = body.mass;
-        data[i * 12 + 5] = body.radius;
-        data[i * 12 + 6] = body.alive;
-        data[i * 12 + 7] = 0; // padding
-        data[i * 12 + 8] = body.color[0];
+        data[i * 12 + 0] = body.x; //4
+        data[i * 12 + 1] = body.y; //8
+        data[i * 12 + 2] = body.vx; //12
+        data[i * 12 + 3] = body.vy; //16
+        data[i * 12 + 4] = body.mass; //4
+        data[i * 12 + 5] = body.radius;//8
+        data[i * 12 + 6] = body.alive; //12
+        data[i * 12 + 7] = 0; // padding 16 (32)
+        data[i * 12 + 8] = body.color[0]; // start at offset of multiple of 16 
         data[i * 12 + 9] = body.color[1];
         data[i * 12 + 10] = body.color[2];
         data[i * 12 + 11] = body.color[3];
@@ -161,9 +161,11 @@ export function createGPUBuffer(
     device: GPUDevice,
     bodies: CelestialBody[]
 ): GPUBuffer {
+    
     // fill the array of instances of bodies from the function above,
     // then make the GPU buffer. Storage, COPY DST and COPY SRC because
-    // 
+    // we need the buffer to be copied into on the CPU side and we need
+    // the CPU side to copy the data back out later for collisions
     let data = bodiesToFloat32Array(bodies);
     let gpuBuffer = device.createBuffer({
         size: data.byteLength,
@@ -236,7 +238,7 @@ export function renderPass(
     const renderPass = commandEncoder.beginRenderPass({
         colorAttachments: [{
             view: context.getCurrentTexture().createView(),
-            clearValue: { r:0, g:0, b:0, a:1 },
+            clearValue: { r:1, g:1, b:1, a:1 },
             loadOp: "clear",
             storeOp: "store"
         }]

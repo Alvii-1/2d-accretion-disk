@@ -48,9 +48,12 @@ fn computeMain( @builtin(global_invocation_id) id: vec3u )
         let dy = other.position.y - bodiesIn[id.x].position.y;
 
         // get the difference in pos diagonal
-        let r = sqrt(dx*dx + dy*dy + 100.0);  // epsilon squared = 100
+        // smoothing factor of 100 to prevent insane accelerations at close speeds
+        // and avoid any possible divide by zero or near zero
+        let r = sqrt(dx*dx + dy*dy + 100.0);  
 
         // compute acceleration change and apply it
+        // Newton's law of gravitation
         let acc = params.G * other.mass / (r * r * r);
         ax += acc * dx;
         ay += acc * dy;

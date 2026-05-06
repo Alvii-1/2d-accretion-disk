@@ -65,12 +65,16 @@ function checkCollisions(
     const changed = new Set<number>();
 
     for (let i = 1; i < bodies.length; i++) {
-        if (bodies[i].alive === 0) continue;
+        if (bodies[i].alive === 0) continue; // skip if we're not alive already
 
         // check against central body
+
+        // get distance to central body
         const dx0 = bodies[i].x - bodies[0].x;
         const dy0 = bodies[i].y - bodies[0].y;
         const dist0 = Math.sqrt(dx0*dx0 + dy0*dy0);
+
+        // if its too close within a margin, kill that body
         if (dist0 <= bodies[0].radius * 1.15 + bodies[i].radius) {
             bodies[i].alive = 0;
             changed.add(i);
@@ -80,15 +84,23 @@ function checkCollisions(
         // check against all other small bodies
         for (let j = i + 1; j < bodies.length; j++) {
             if (bodies[i].mass > 1e8 || bodies[j].mass > 1e8) continue; // if we're the big masses we're immortal
-            if (bodies[j].alive === 0) continue;
+            if (bodies[j].alive === 0) continue;                        // if we're not alive skip
+            
+            // same distance calculation before
             const dx = bodies[j].x - bodies[i].x;
             const dy = bodies[j].y - bodies[i].y;
             const dist = Math.sqrt(dx*dx + dy*dy);
+
+            // same general check
             if (dist < bodies[i].radius + bodies[j].radius) {
+
+                // this time if we impact a smaller body we increase the mass of this one 
                 const totalMass = bodies[i].mass + bodies[j].mass;
                 bodies[i].vx = (bodies[i].vx * bodies[i].mass + bodies[j].vx * bodies[j].mass) / totalMass;
                 bodies[i].vy = (bodies[i].vy * bodies[i].mass + bodies[j].vy * bodies[j].mass) / totalMass;
                 bodies[i].mass = totalMass;
+
+                // we also update the radius and kill the other body, then add these two to changed bodies set
                 bodies[i].radius = Math.sqrt(bodies[i].radius**2 + bodies[j].radius**2 * 0.75);
                 bodies[j].alive = 0;
                 changed.add(i);
@@ -97,11 +109,13 @@ function checkCollisions(
         }
     }
 
-    // write changed bodies back to GPU buffer
+    // write changed bodies back to GPU buffer, since we've only been updating on the CPU side so far
+    // after the CPU gets the up to date snapshot and updates dead/alive values, update the GPU buffer
+    // so that it will skip drawing / computing physics for dead bodies
     for (const idx of changed) {
-        const offset = idx * 12 * 4;
-        const data = bodiesToFloat32Array([bodies[idx]]);
-        device.queue.writeBuffer(buffer, offset, data.buffer);
+        const offset = idx * 12 * 4;                             // get the byte offset of the body that was collided
+        const data = bodiesToFloat32Array([bodies[idx]]);        // set it up as a Float32Array of 48 bytes
+        device.queue.writeBuffer(buffer, offset, data.buffer);   // then just change that part of the GPU buffer
     }
 }
 
@@ -118,7 +132,8 @@ async function main()
     let bodies = generateBodies(500, 1e6, 80, 300);
 
     // setup the sim by calling the func above to get the bodies
-    //const bodies = generateBodies(1000, 1e6,);
+    // each frame jumps forward in chunks; time steps. 
+    // small dt means motion is more accurate but slower, higher is opposite
     const state: SimulationState = {
         bodies,
         dt: 0.008
@@ -281,53 +296,60 @@ async function main()
     {
         const speed = parseInt(speedSlider.value);
 
+        // compute pass
         for (let s = 0; s < speed; s++) {
+
+            // setup cmd encoder and begin compute pass batch
             const encoder = device.createCommandEncoder();
             const computePass = encoder.beginComputePass();
+
+            // set the pipeline for compute and the bind group for compute
+            // that would take in bufferA, B, and the parameters of the sim
             computePass.setPipeline(computePipeline);
             computePass.setBindGroup(0, computeBindGroup);
+
+            // computing how many blocks to send of 64 threads each
             computePass.dispatchWorkgroups(Math.ceil(state.bodies.length / 64));
             computePass.end();
-            device.queue.submit([encoder.finish()]);
+            device.queue.submit([encoder.finish()]); // submit encoder
 
-            [bufferA, bufferB] = [bufferB, bufferA];
+            [bufferA, bufferB] = [bufferB, bufferA]; // swap buffers so the newly updated one is drawn
+
+            // recompute the bind groups for compute and render based on sim updates
             computeBindGroup = makeComputeBindGroup(device, computeBGL, bufferA, bufferB, paramsBuffer);
             renderBindGroup = makeBindGroup(device, renderBGL, bufferB, zoomBuffer);
         }
-        // // compute pass
-        // const encoder = device.createCommandEncoder();
-        // const computePass = encoder.beginComputePass();
-        // computePass.setPipeline(computePipeline);
-        // computePass.setBindGroup(0, computeBindGroup);
-        // computePass.dispatchWorkgroups(Math.ceil(state.bodies.length / 64));
-        // computePass.end();
-        // device.queue.submit([encoder.finish()]);
 
-        // // swap buffers
-        // [bufferA, bufferB] = [bufferB, bufferA];
-        // computeBindGroup = makeComputeBindGroup(device, computeBGL, bufferA, bufferB, paramsBuffer);
-        // renderBindGroup = makeBindGroup(device, renderBGL, bufferB, zoomBuffer);
 
         // render
         renderPass(device, context, renderPipeline, renderBindGroup, state.bodies.length);
 
+        // logic for collision detection (CPU)
+        // we check for collisions every 5 frames
         frameCount++;
-
         if (frameCount % 5 === 0) {
             
-            // read current body data from GPU back to CPU
+            // create temporary CPU readable buffer 
             const readBuffer = device.createBuffer({
                 size: state.bodies.length * 12 * 4,
-                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ // CPU readable
             });
             
+            // setup cmd encoder
             const encoder = device.createCommandEncoder();
+
+            // copy the current buffer into the temporary CPU buffer
             encoder.copyBufferToBuffer(bufferB, 0, readBuffer, 0, state.bodies.length * 12 * 4);
             device.queue.submit([encoder.finish()]);
             
+            // 
             readBuffer.mapAsync(GPUMapMode.READ).then(() => {
                 const data = new Float32Array(readBuffer.getMappedRange());
-                // update state.bodies positions from GPU data
+
+                // use the temporary CPU readable buffer along with the GPU buffer
+                // to update bodies pos on the CPU side, so CPU has an up-to date picture
+
+                // state.bodies is the CPU updated side, it stays up to date here
                 for (let i = 0; i < state.bodies.length; i++) {
                     state.bodies[i].x = data[i * 12 + 0];
                     state.bodies[i].y = data[i * 12 + 1];
@@ -335,7 +357,9 @@ async function main()
                     state.bodies[i].vy = data[i * 12 + 3];
                 }
                 readBuffer.unmap();
-                readBuffer.destroy();
+                readBuffer.destroy(); // get rid of the temporary buffer since we're done with it
+
+                // run collision detection on buffers
                 checkCollisions(state.bodies, device, bufferA);
                 checkCollisions(state.bodies, device, bufferB);
             });
